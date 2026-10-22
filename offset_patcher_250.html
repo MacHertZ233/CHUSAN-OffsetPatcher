@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CHUNITHM 判定偏移扩展器</title>
+<style>
+  :root {
+    --bg: #14161c;
+    --card: #1c2029;
+    --card2: #232836;
+    --line: #2e3545;
+    --fg: #e6e9f0;
+    --dim: #9aa3b5;
+    --accent: #58b6ff;
+    --ok: #4fd08a;
+    --warn: #ffb454;
+    --err: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 28px 18px 60px;
+    background: radial-gradient(1200px 600px at 50% -10%, #1d2433 0%, var(--bg) 60%);
+    color: var(--fg);
+    font: 14px/1.65 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; }
+  header h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: .5px; }
+  header .sub { margin: 0 0 22px; color: var(--dim); }
+  header .sub code, .hint code { background: #10131a; padding: 1px 5px; border-radius: 4px; color: #cfe3ff; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 18px 20px; margin: 0 0 16px;
+  }
+  .card h2 { margin: 0 0 14px; font-size: 16px; color: var(--accent); font-weight: 600; }
+  .card.notice {
+    border-color: rgba(255, 107, 107, .5);
+    background: linear-gradient(180deg, rgba(255, 107, 107, .1), var(--card) 70%);
+  }
+  .card.notice h2 { color: var(--err); }
+  .card.notice ul { margin: 0 0 0 18px; padding: 0; }
+  .card.notice li { margin: 5px 0; color: #ead9d9; }
+  .card.notice code { background: #10131a; padding: 1px 5px; border-radius: 4px; color: #ffd7d7; }
+  .row { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin: 10px 0; }
+  label { color: var(--dim); }
+  input[type=number], select {
+    background: var(--card2); color: var(--fg); border: 1px solid var(--line);
+    border-radius: 8px; padding: 7px 10px; font: inherit; outline: none;
+  }
+  input[type=number] { width: 100px; }
+  input[type=range] { flex: 1 1 260px; accent-color: var(--accent); }
+  .val { font-variant-numeric: tabular-nums; color: var(--fg); min-width: 90px; font-weight: 600; }
+  .hint { color: var(--dim); font-size: 13px; margin: 8px 0 0; }
+  .drops { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 720px) { .drops { grid-template-columns: 1fr; } }
+  .drop {
+    border: 1.5px dashed #3a4358; border-radius: 10px; padding: 16px;
+    background: var(--card2); cursor: pointer; transition: .15s; min-height: 118px;
+  }
+  .drop:hover, .drop.over { border-color: var(--accent); background: #1d2636; }
+  .drop .t { font-weight: 600; margin-bottom: 4px; }
+  .drop .f { color: var(--dim); font-size: 12.5px; word-break: break-all; }
+  .drop .tag { display: inline-block; margin-top: 10px; font-size: 12px; padding: 2px 8px; border-radius: 999px; }
+  .tag.ok { background: rgba(79,208,138,.12); color: var(--ok); }
+  .tag.warn { background: rgba(255,180,84,.12); color: var(--warn); }
+  .tag.err { background: rgba(255,107,107,.12); color: var(--err); }
+  .tag.idle { background: #262c39; color: var(--dim); }
+  input[type=file] { display: none; }
+  button {
+    background: linear-gradient(180deg, #2f6f9e, #245a82); color: #fff;
+    border: 1px solid #3b7fae; border-radius: 9px; padding: 10px 18px;
+    font: inherit; font-weight: 600; cursor: pointer;
+  }
+  button:hover { filter: brightness(1.12); }
+  button:disabled { opacity: .45; cursor: not-allowed; filter: none; }
+  button.ghost { background: transparent; border-color: var(--line); color: var(--dim); }
+  .preview { max-height: 330px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { padding: 5px 10px; text-align: right; border-bottom: 1px solid #262c39; white-space: nowrap; }
+  th { position: sticky; top: 0; background: #1a1f29; color: var(--dim); font-weight: 600; z-index: 1; }
+  th:first-child, td:first-child { text-align: left; }
+  td.origin { color: var(--dim); }
+  td.final { color: var(--fg); }
+  tr.zero td { color: var(--accent); }
+  tr.zero td.origin, tr.zero td.final { color: var(--accent); }
+  td.up { color: var(--ok); }
+  td.down { color: var(--warn); }
+  #log { margin-top: 12px; font-size: 13px; color: var(--dim); white-space: pre-wrap; }
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; color: var(--dim); font-size: 12.5px; margin-top: 10px; }
+  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; }
+  .stat { display: flex; gap: 22px; flex-wrap: wrap; margin: 12px 0 0; font-size: 13px; color: var(--dim); }
+  .stat b { color: var(--fg); font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>CHUNITHM 判定偏移扩展器</h1>
+    <p class="sub">
+      判定タイミング A / B · 0.1 步长 · 正向到 +9.9 / 对称到 ±6.3 · 配套 chusanApp.exe 槽位补丁
+    </p>
+  </header>
+
+  <section class="card notice">
+    <h2>⚠ 使用前必读</h2>
+    <ul>
+      <li><b>先备份 3 个文件</b>：<code>chusanApp.exe</code>、<code>data/db/PlayOptionJudgeTimingOffsetTableRecord.bin</code>、<code>data/db/PlayOptionPlayTimingOffsetTableRecord.bin</code>。</li>
+      <li>本工具会同时修改这 3 个文件：<b>exe 扩槽位、两个表加档位</b>。必须一起替换；只换一部分会导致界面档位与表数据不一致。</li>
+      <li>exe 补丁是<b>实验性</b>的：修改 90 处写死的槽位数与偏移，静态校验通过，但未在真机验证。若进游戏崩溃，用备份还原即可，不影响存档。</li>
+      <li>仅支持 <b>2.50 版</b> chusanApp.exe（26,306,048 字节）；其他版本会被拒绝。已经打过本 Mod 的 exe 也可以再次载入并改到别的范围。</li>
+      <li>对称模式会<b>移动零点</b>：0.0 不再固定在第 20 档，旧存档/服务端里的索引含义会变，升级后需重新调一次。</li>
+      <li>服务端若校验选项索引范围（例如只接受 0–40），扩展后的索引可能被拒绝；请先在测试环境验证。</li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2>原理</h2>
+    <p class="hint">
+      chusanApp.exe 把「判定タイミング A/B」存成 0–40 的索引（第 20 档 = 0.0）；每档显示什么、实际偏移多少，
+      由 <code>data/db</code> 下两个表的行决定。服务端只保存/下发这个索引。
+    </p>
+    <ul class="hint" style="margin:8px 0 0 18px; padding:0">
+      <li><b>正向追加</b>：原版 41 行逐字节保留，只在表尾追加 +2.1…+9.9（0.1 步长），最多 120 槽；零点和旧索引不变。</li>
+      <li><b>对称追加</b>：在表头插入 −R…−2.1、表尾追加 +2.1…+R（0.1 步长），最多 −6.3…+6.3、127 槽；索引整体后移，0.0 移到第 (R−2)×10+20 档。</li>
+      <li>两个模式的上界分别卡在 +9.9 / ±6.3，是因为 exe 里的循环上界是 x86 的 8 位立即数（最多 +127 槽）。</li>
+      <li>只替换表、不改 exe 时，设置界面仍只能选到原来的 41 档；把 chusanApp.exe 也载入本页，追加档位才能在游戏里选到。</li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2>1. 选择范围与模式</h2>
+    <div class="row">
+      <label for="mode">模式</label>
+      <select id="mode">
+        <option value="append">0.1 步长 · 正向追加（+2.1 … +9.9）</option>
+        <option value="appendSym">0.1 步长 · 对称追加（−6.3 … +6.3）</option>
+      </select>
+      <label for="range">上界</label>
+      <input id="range" type="number" min="2" max="9.9" step="0.1" value="9.9">
+      <span class="val" id="rangeVal">+9.9</span>
+      <button class="ghost" id="reset" type="button">恢复原版（0.1 / 2.0）</button>
+    </div>
+    <div class="row">
+      <input id="slider" type="range" min="2" max="9.9" step="0.1" value="9.9">
+    </div>
+    <p class="hint" id="modeHint"></p>
+    <div class="stat" id="stat"></div>
+  </section>
+
+  <section class="card">
+    <h2>2. 载入两个表文件（.bin）</h2>
+    <div class="drops">
+      <div class="drop" id="dropPlay">
+        <div class="t">判定タイミング A（Play）</div>
+        <div class="f">PlayOptionPlayTimingOffsetTableRecord.bin</div>
+        <div class="tag idle" id="tagPlay">未载入</div>
+        <input id="filePlay" type="file" accept=".bin">
+      </div>
+      <div class="drop" id="dropJudge">
+        <div class="t">判定タイミング B（Judge）</div>
+        <div class="f">PlayOptionJudgeTimingOffsetTableRecord.bin</div>
+        <div class="tag idle" id="tagJudge">未载入</div>
+        <input id="fileJudge" type="file" accept=".bin">
+      </div>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <button class="ghost" id="pickFolder" type="button">选择 data/db 文件夹自动载入</button>
+      <input id="folder" type="file" webkitdirectory multiple>
+      <span class="hint" style="margin:0">也可以直接把两个 .bin 拖进上面的框里。</span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>3. 载入 chusanApp.exe（扩大选项槽位）</h2>
+    <div class="drop" id="dropExe">
+      <div class="t">chusanApp.exe · 2.50</div>
+      <div class="f">把 41 个槽位扩到与表行数一致；原版或已打过本 Mod 的 exe 都可以。不载入则只改表、不改 exe。</div>
+      <div class="tag idle" id="tagExe">未载入</div>
+      <input id="fileExe" type="file" accept=".exe">
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>4. 档位预览</h2>
+    <div class="preview">
+      <table>
+        <thead><tr><th>索引</th><th>原版值</th><th>当前文件值</th><th>新值 / 显示文本</th><th>写入的 double</th></tr></thead>
+        <tbody id="lutBody"></tbody>
+      </table>
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--accent)"></i>蓝色 = 0.0 档（正向模式是 ID_20；对称模式会随范围后移）</span>
+      <span><i style="background:var(--ok)"></i>新增的正向档位</span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>5. 生成并下载</h2>
+    <div class="row">
+      <button id="build" type="button" disabled>生成补丁文件</button>
+      <span class="hint" style="margin:0">按标准文件名下载；备份后覆盖游戏对应文件。</span>
+    </div>
+    <div id="log"></div>
+  </section>
+</div>
+
+<script>
+/* ==== LUT-CORE-BEGIN ==== */
+(function (root) {
+  "use strict";
+
+  const SLOTS = 41;          // option slots in chusanApp.exe (0..40)
+  const ZERO = 20;           // slot whose value is 0.0
+  const STEP = 0.1;          // vanilla step
+
+  function decodeAscii(bytes) {
+    let s = "";
+    for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+    return s;
+  }
+
+  function encodeAscii(str) {
+    const out = new Uint8Array(str.length);
+    for (let i = 0; i < str.length; i++) out[i] = str.charCodeAt(i) & 0xff;
+    return out;
+  }
+
+  function parseBin(input) {
+    const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
+    const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    let o = 0;
+    const count = dv.getUint32(o, true); o += 4;
+    const rows = [];
+    for (let i = 0; i < count; i++) {
+      const id = dv.getInt32(o, true); o += 4;
+      const nlen = dv.getUint32(o, true); o += 4;
+      if (o + nlen > bytes.length) throw new Error("记录 " + i + " 的名称越界");
+      const name = decodeAscii(bytes.subarray(o, o + nlen)); o += nlen;
+      const dlen = dv.getUint32(o, true); o += 4;
+      if (o + dlen > bytes.length) throw new Error("记录 " + i + " 的显示文本越界");
+      const disp = decodeAscii(bytes.subarray(o, o + dlen)); o += dlen;
+      if (o + 8 + 28 > bytes.length) throw new Error("记录 " + i + " 的数值越界");
+      const val = dv.getFloat64(o, true); o += 8;
+      const ints = [];
+      for (let k = 0; k < 7; k++) { ints.push(dv.getInt32(o, true)); o += 4; }
+      rows.push({ id: id, name: name, disp: disp, val: val, ints: ints });
+    }
+    return { count: count, rows: rows, consumed: o, size: bytes.length };
+  }
+
+  function cloneRows(rows) {
+    return rows.map(function (r) {
+      return { id: r.id, name: r.name, disp: r.disp, val: r.val, ints: r.ints.slice() };
+    });
+  }
+
+  function serializeRows(rows) {
+    let size = 4;
+    for (let i = 0; i < rows.length; i++) {
+      size += 4 + 4 + rows[i].name.length + 4 + rows[i].disp.length + 8 + 28;
+    }
+    const out = new Uint8Array(size);
+    const dv = new DataView(out.buffer);
+    let o = 0;
+    dv.setUint32(o, rows.length, true); o += 4;
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      dv.setInt32(o, r.id, true); o += 4;
+      dv.setUint32(o, r.name.length, true); o += 4;
+      out.set(encodeAscii(r.name), o); o += r.name.length;
+      dv.setUint32(o, r.disp.length, true); o += 4;
+      out.set(encodeAscii(r.disp), o); o += r.disp.length;
+      dv.setFloat64(o, r.val, true); o += 8;
+      for (let k = 0; k < 7; k++) { dv.setInt32(o, r.ints[k], true); o += 4; }
+    }
+    return out;
+  }
+
+  /* Rewrite the 41 base rows with a remapped LUT (keeps ids, names, ints). */
+  function buildBin(parsed, lut) {
+    if (parsed.rows.length < lut.length) throw new Error("表行数不足 41");
+    const rows = cloneRows(parsed.rows).slice(0, lut.length);
+    for (let i = 0; i < rows.length; i++) {
+      rows[i].disp = lut[i].text;
+      rows[i].val = lut[i].num;
+    }
+    return serializeRows(rows);
+  }
+
+  /* Canonical vanilla 41 rows (-2.0..+2.0, 0.1 step, ID_20 is the default). */
+  function canonicalBase() {
+    const rows = [];
+    for (let i = 0; i < SLOTS; i++) {
+      const text = formatValue((i - ZERO) * STEP, 1);
+      const ints = i === ZERO ? [1, 1, 1, 1, 1, i * 10, 1] : [0, 0, 0, 0, 0, i * 10, 1];
+      rows.push({ id: i, name: "ID_" + String(i).padStart(2, "0"), disp: text,
+                  val: parseFloat(text), ints: ints });
+    }
+    return rows;
+  }
+
+  /* Find the -2.0..+2.0 window inside a vanilla / already-extended table. */
+  function baseRows(parsed) {
+    if (parsed && parsed.rows && parsed.rows.length >= SLOTS) {
+      const rows = cloneRows(parsed.rows);
+      for (let i = 0; i + SLOTS <= rows.length; i++) {
+        if (Math.abs(rows[i].val + 2) < 1e-9 &&
+            Math.abs(rows[i + SLOTS - 1].val - 2) < 1e-9) {
+          return rows.slice(i, i + SLOTS);
+        }
+      }
+    }
+    return canonicalBase();
+  }
+
+  /*
+   * Keep the 41 vanilla rows and append rows for +2.1..+R (0.1 step).
+   */
+  function buildAppended(parsed, R) {
+    R = Math.min(100, Math.max(2, Number(R) || 2));
+    const target = SLOTS + Math.round((R - 2) * 10);
+    const rows = baseRows(parsed).map(function (r, i) {
+      return {
+        id: i,
+        name: "ID_" + String(i).padStart(2, "0"),
+        disp: r.disp,
+        val: r.val,
+        ints: [r.ints[0], r.ints[1], r.ints[2], r.ints[3], r.ints[4], i * 10, r.ints[6]]
+      };
+    });
+    for (let i = SLOTS; i < target; i++) {
+      const v = 2.0 + (i - SLOTS + 1) / 10;
+      const text = formatValue(v, 1);
+      rows.push({
+        id: i,
+        name: "ID_" + String(i).padStart(2, "0"),
+        disp: text,
+        val: parseFloat(text),
+        ints: [0, 0, 0, 0, 0, i * 10, 1]
+      });
+    }
+    return serializeRows(rows);
+  }
+
+  function appendedCount(R) {
+    R = Math.min(100, Math.max(2, Number(R) || 2));
+    return Math.round((R - 2) * 10);
+  }
+
+  /*
+   * Symmetric variant: prepend -R..-2.1, keep the 41 vanilla rows, append
+   * +2.1..+R (all 0.1 step). Indices therefore shift: 0 is now at +offset.
+   */
+  function buildAppendedSym(parsed, R) {
+    R = Math.min(100, Math.max(2, Number(R) || 2));
+    const extra = Math.round((R - 2) * 10);
+    const base = baseRows(parsed);
+    const rows = [];
+    function pushRow(idx, v, text, ints) {
+      rows.push({
+        id: idx,
+        name: "ID_" + String(idx).padStart(2, "0"),
+        disp: text,
+        val: parseFloat(text),
+        ints: [ints[0], ints[1], ints[2], ints[3], ints[4], idx * 10, ints[6]]
+      });
+    }
+    for (let k = 0; k < extra; k++) {
+      const v = -R + k / 10;
+      pushRow(k, v, formatValue(v, 1), [0, 0, 0, 0, 0, 0, 1]);
+    }
+    for (let i = 0; i < SLOTS; i++) {
+      const src = base[i];
+      pushRow(extra + i, src.val, src.disp, src.ints);
+    }
+    for (let k = 1; k <= extra; k++) {
+      const v = 2.0 + k / 10;
+      pushRow(extra + SLOTS + k - 1, v, formatValue(v, 1), [0, 0, 0, 0, 0, 0, 1]);
+    }
+    return serializeRows(rows);
+  }
+
+  function appendedSymCount(R) {
+    return 2 * appendedCount(R);
+  }
+
+  /* ---- experimental chusanApp.exe slot-count patch (2.50 build) ---- */
+  const EXE_SITES = [
+    [0xB7F6A0,0], [0xB873A1,0], [0xB90950,0], [0xB83650,0], [0xB8F903,0], [0xB8F193,0],
+    [0xB868B2,0], [0xB86E82,0], [0xB85CD9,0], [0xB848C9,0], [0xB830B0,0], [0xB82A90,0],
+    [0xB7F1E4,0], [0xB8CB2D,0], [0xB8CB36,0], [0xB8CB46,0], [0xB8BFCE,0], [0xB8E8FE,0],
+    [0xB8D83E,0], [0xB9028E,0], [0xB8A4BF,0], [0xB78EA7,1], [0xB78EAE,1], [0xB8DFA3,2],
+    [0xB85CCB,2], [0xB848BB,2], [0xB830A6,2], [0xB8A4B5,2], [0xB813B7,1], [0xB8235A,2],
+    [0xB78EF8,5], [0xB8CB26,5], [0xB8BFC6,5], [0xB8E8F6,5], [0xB8D836,5], [0xB90286,5],
+    [0xB8A4E5,5], [0xB8A50C,5], [0xB8A55B,5], [0xB7DF1A,4], [0xB7DF3A,3], [0xB8815E,3],
+    [0xB88185,4], [0xB881A9,1], [0xB881B0,0], [0xB7F6D0,0], [0xB87401,0], [0xB909C0,0],
+    [0xB83680,0], [0xB8F993,0], [0xB8F223,0], [0xB86922,0], [0xB86EF2,0], [0xB85E89,0],
+    [0xB84A79,0], [0xB83140,0], [0xB82AC0,0], [0xB7F274,0], [0xB8CC5D,0], [0xB8CC66,0],
+    [0xB8CC76,0], [0xB8C0BE,0], [0xB8E9EE,0], [0xB8D92E,0], [0xB9037E,0], [0xB8A8EF,0],
+    [0xB78F67,1], [0xB78F6E,1], [0xB8E043,2], [0xB85E7B,2], [0xB84A6B,2], [0xB83136,2],
+    [0xB8A8E5,2], [0xB81537,1], [0xB8248A,2], [0xB78FB8,5], [0xB8CC56,5], [0xB8C0B6,5],
+    [0xB8E9E6,5], [0xB8D926,5], [0xB90376,5], [0xB8A915,5], [0xB8A93C,5], [0xB8A98B,5],
+    [0xB7E0CA,4], [0xB7E0EA,3], [0xB881CD,3], [0xB881F4,4], [0xB88218,1], [0xB8821F,0]
+  ];
+  const EXE_BASE = 0x400C00;   // VA -> file offset for .text in this build
+  const EXE_SIZE = 26306048;   // 2.50 chusanApp.exe
+  const EXE_MAX_N = 127;       // loop bounds are signed imm8
+
+  function buildExe(input, R, mode) {
+    const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
+    if (bytes.length !== EXE_SIZE) {
+      throw new Error("chusanApp.exe 大小不对（应为 " + EXE_SIZE + " 字节，实际 " + bytes.length + "）");
+    }
+    const n = SLOTS + (mode === "appendSym" ? appendedSymCount(R) : appendedCount(R));
+    if (n > EXE_MAX_N) {
+      throw new Error("exe 补丁最多支持 " + EXE_MAX_N + " 槽（约 +10.6），当前需要 " + n + " 槽");
+    }
+    const delta = 12 * (n - SLOTS);
+    const out = new Uint8Array(bytes);
+    const dv = new DataView(out.buffer);
+    for (let i = 0; i < EXE_SITES.length; i++) {
+      const va = EXE_SITES[i][0], kind = EXE_SITES[i][1];
+      const off = va - EXE_BASE;
+      if (off < 0 || off + 8 > out.length) throw new Error("补丁站点越界: 0x" + va.toString(16));
+      if (kind <= 3) {
+        const base = [0x1F8, 0x1F4, 0x1EC, 0x1FC][kind];
+        const pos = off + (kind === 3 ? 1 : 2);
+        const cur = dv.getUint32(pos, true);
+        const k = (cur - base) / 12;
+        if (!(cur >= base && k >= 0 && k <= EXE_MAX_N - SLOTS && Math.floor(k) === k)) {
+          throw new Error("此 chusanApp.exe 与补丁不匹配（站点 0x" + va.toString(16) + "）");
+        }
+        dv.setUint32(pos, base + delta, true);
+      } else {
+        const pos = off + (kind === 4 ? 1 : 2);
+        const cur = out[pos];
+        if (cur < SLOTS || cur > EXE_MAX_N) {
+          throw new Error("此 chusanApp.exe 与补丁不匹配（站点 0x" + va.toString(16) + "）");
+        }
+        out[pos] = n;
+      }
+    }
+    return out;
+  }
+
+  function decimalsFor(step) {
+    for (let d = 1; d <= 4; d++) {
+      const scaled = step * Math.pow(10, d);
+      if (Math.abs(scaled - Math.round(scaled)) < 1e-9) return d;
+    }
+    return 4;
+  }
+
+  function formatValue(v, decimals) {
+    if (Math.abs(v) < 1e-12) return "0";
+    return v.toFixed(decimals);
+  }
+
+  /*
+   * mode = "symmetric" : -R..+R, step R/20, slot 20 = 0
+   * mode = "positive"  : slot 0..20 unchanged (-2.0..0.0, step 0.1),
+   *                      slot 21..40 stretched to 0.05R..+R
+   */
+  function computeLut(R, mode) {
+    R = Math.min(100, Math.max(2, Number(R) || 2));
+    const wide = R / 20;
+    const wd = decimalsFor(wide);
+    const nd = decimalsFor(STEP);
+    const lut = [];
+    for (let i = 0; i <= SLOTS - 1; i++) {
+      let v, decimals;
+      if (mode === "positive" && i <= ZERO) {
+        v = (i - ZERO) * STEP;
+        decimals = nd;
+      } else {
+        v = (i - ZERO) * wide;
+        decimals = wd;
+      }
+      const text = formatValue(v, decimals);
+      lut.push({ text: text, num: parseFloat(text), raw: v });
+    }
+    return lut;
+  }
+
+  function isVanilla(parsed) {
+    if (parsed.count !== SLOTS) return false;
+    for (let i = 0; i < parsed.rows.length; i++) {
+      const r = parsed.rows[i];
+      const want = (i - ZERO) * STEP;
+      if (Math.abs(r.val - want) > 1e-9) return false;
+      if (r.id !== i) return false;
+    }
+    return true;
+  }
+
+  /* Read the current slot count from an exe already patched (or vanilla). */
+  function detectExeN(input) {
+    const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
+    if (bytes.length !== EXE_SIZE) return null;
+    const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const off = EXE_SITES[0][0] - EXE_BASE + 2;
+    const cur = dv.getUint32(off, true);
+    const k = (cur - 0x1F8) / 12;
+    if (!(cur >= 0x1F8 && k >= 0 && k <= EXE_MAX_N - SLOTS && Math.floor(k) === k)) return null;
+    const n = SLOTS + k;
+    for (let i = 0; i < EXE_SITES.length; i++) {
+      if (EXE_SITES[i][1] === 5) {
+        const pos = EXE_SITES[i][0] - EXE_BASE + 2;
+        if (bytes[pos] !== n) return null;
+        break;
+      }
+    }
+    return n;
+  }
+
+  const api = {
+    SLOTS: SLOTS,
+    ZERO: ZERO,
+    STEP: STEP,
+    parseBin: parseBin,
+    serializeRows: serializeRows,
+    cloneRows: cloneRows,
+    buildBin: buildBin,
+    buildAppended: buildAppended,
+    buildAppendedSym: buildAppendedSym,
+    canonicalBase: canonicalBase,
+    baseRows: baseRows,
+    appendedSymCount: appendedSymCount,
+    buildExe: buildExe,
+    detectExeN: detectExeN,
+    appendedCount: appendedCount,
+    EXE_SITES: EXE_SITES,
+    EXE_MAX_N: EXE_MAX_N,
+    computeLut: computeLut,
+    isVanilla: isVanilla,
+    formatValue: formatValue,
+    decimalsFor: decimalsFor
+  };
+
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+  else root.OffsetLut = api;
+})(typeof window !== "undefined" ? window
+   : (typeof globalThis !== "undefined" ? globalThis : this));
+/* ==== LUT-CORE-END ==== */
+
+/* ---------------------------------------------------------------- UI ---- */
+(function () {
+  "use strict";
+  const LUT = window.OffsetLut;
+  const NAMES = {
+    judge: "PlayOptionJudgeTimingOffsetTableRecord.bin",
+    play: "PlayOptionPlayTimingOffsetTableRecord.bin"
+  };
+  const state = {
+    judge: { name: null, bytes: null, parsed: null },
+    play:  { name: null, bytes: null, parsed: null },
+    exe:   { name: null, bytes: null }
+  };
+
+  const $ = (id) => document.getElementById(id);
+  const rangeEl = $("range"), sliderEl = $("slider"), modeEl = $("mode");
+  const logEl = $("log"), buildEl = $("build");
+
+  function log(msg) { logEl.textContent = msg; }
+
+  const MODE_MAX = { append: 9.9, appendSym: 6.3 };
+  function maxForMode(mode) { return MODE_MAX[mode] || 9.9; }
+
+  function clampRange(v, mode) {
+    v = Number(v);
+    if (!isFinite(v)) v = maxForMode(mode);
+    v = Math.round(v * 10) / 10;
+    return Math.min(maxForMode(mode), Math.max(2, v));
+  }
+
+  function currentRange() { return clampRange(rangeEl.value, modeEl.value); }
+
+  function referenceParsed() {
+    return state.judge.parsed || state.play.parsed || null;
+  }
+
+  function renderPreview() {
+    const R = currentRange();
+    const mode = modeEl.value;
+    const vanilla = LUT.computeLut(2, "symmetric");
+    const ref = referenceParsed();
+    const refRows = ref ? LUT.baseRows(ref) : null;
+    const body = $("lutBody");
+    const half = LUT.appendedCount(R);
+    const neg = mode === "appendSym" ? half : 0;
+    const extra = neg + half;
+    const totalRows = LUT.SLOTS + extra;
+    const zeroIdx = neg + LUT.ZERO;
+    const html = [];
+    const row = (idx, origin, cur, next, raw, cls) =>
+      "<tr" + (cls ? " class=\"" + cls + "\"" : "") + ">" +
+        "<td>ID_" + String(idx).padStart(2, "0") + "</td>" +
+        "<td class=\"origin\">" + origin + "</td>" +
+        "<td class=\"origin\">" + cur + "</td>" +
+        "<td class=\"final\">" + next + "</td>" +
+        "<td class=\"origin\">" + raw + "</td>" +
+      "</tr>";
+
+    for (let k = 0; k < neg; k++) {
+      const v = -R + k / 10;
+      const text = LUT.formatValue(v, 1);
+      html.push(row(k, "—", "—", text, Math.round(v * 1e6) / 1e6, ""));
+    }
+    for (let i = 0; i < LUT.SLOTS; i++) {
+      const cur = refRows ? refRows[i].disp : vanilla[i].text;
+      const raw = refRows ? refRows[i].val : vanilla[i].num;
+      html.push(row(neg + i, vanilla[i].text, cur, cur, Math.round(raw * 1e6) / 1e6,
+                    (neg + i) === zeroIdx ? "zero" : ""));
+    }
+    for (let k = 1; k <= half; k++) {
+      const v = 2.0 + k / 10;
+      const text = LUT.formatValue(v, 1);
+      html.push(row(neg + LUT.SLOTS + k - 1, "—", "—", text, Math.round(v * 1e6) / 1e6, "up"));
+    }
+    body.innerHTML = html.join("");
+
+    const files = [state.play.parsed ? "判定A" : null, state.judge.parsed ? "判定B" : null,
+                   state.exe.bytes ? "exe" : null].filter(Boolean);
+    $("stat").innerHTML =
+      "<span>行数 <b>" + totalRows + "</b></span>" +
+      "<span>新增 <b>" + extra + "</b></span>" +
+      "<span>步长 <b>0.1</b></span>" +
+      "<span>范围 <b>" + (neg ? "-" + R.toFixed(1) : "-2.0") + " ~ +" + R.toFixed(1) + "</b></span>" +
+      "<span>0.0 在 <b>ID_" + zeroIdx + "</b></span>" +
+      "<span>已载入 <b>" + (files.length ? files.join("、") : "—") + "</b></span>";
+
+    const exeText = state.exe.bytes
+      ? "已载入 chusanApp.exe：槽位会同步扩到 " + totalRows + "，追加档位可直接在游戏里选到。"
+      : "未载入 chusanApp.exe：表会照常生成，但游戏设置界面仍只有 41 槽；把 chusanApp.exe 载入第 3 节即可一并扩槽。";
+    $("modeHint").textContent = mode === "append"
+      ? "原版 41 行（-2.0…+2.0，0.1 步长）逐字节保留，只在表尾追加 +2.1…+" + R.toFixed(1) +
+        "（0.1 步长），共 " + totalRows + " 行；0.0 仍在 ID_20，旧索引不变。" + exeText
+      : "在表头插入 -" + R.toFixed(1) + "…-2.1、表尾追加 +2.1…+" + R.toFixed(1) +
+        "（0.1 步长），共 " + totalRows + " 行；索引整体后移，0.0 从 ID_20 移到 ID_" + zeroIdx +
+        "，旧存档/服务端里的 0–40 索引含义会变。" + exeText;
+
+    $("rangeVal").textContent = mode === "append" ? "+" + R.toFixed(1) : "±" + R.toFixed(1);
+  }
+
+  function syncRange(from) {
+    const mode = modeEl.value;
+    const max = maxForMode(mode);
+    rangeEl.max = max;
+    sliderEl.max = max;
+    const v = currentRange();
+    if (from !== "range") rangeEl.value = String(v);
+    sliderEl.value = v;
+    renderPreview();
+  }
+
+  function setTag(el, text, cls) {
+    el.textContent = text;
+    el.className = "tag " + (cls || "idle");
+  }
+
+  function loadFile(slot, file) {
+    const entry = state[slot];
+    const tag = $(slot === "judge" ? "tagJudge" : "tagPlay");
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const bytes = new Uint8Array(reader.result);
+        const parsed = LUT.parseBin(bytes);
+        if (parsed.count < LUT.SLOTS) {
+          throw new Error("记录数是 " + parsed.count + "，少于 41；这不是可用的 offset 表");
+        }
+        if (parsed.consumed !== bytes.length) {
+          throw new Error("解析后仍有 " + (bytes.length - parsed.consumed) + " 字节未消费，格式不认识");
+        }
+        entry.name = file.name;
+        entry.bytes = bytes;
+        entry.parsed = parsed;
+        const vanilla = LUT.isVanilla(parsed);
+        if (vanilla) {
+          setTag(tag, "已载入 · 原版 41 档", "ok");
+        } else if (parsed.count > LUT.SLOTS) {
+          setTag(tag, "已载入 · 扩展表 " + parsed.count + " 行（自动定位 −2.0…+2.0 基准）", "warn");
+        } else {
+          setTag(tag, "已载入 · 非原版 41 档（将覆盖数值）", "warn");
+        }
+        log("已载入 " + file.name + "（" + bytes.length + " 字节，" + parsed.count + " 行）。");
+        renderPreview();
+        updateBuild();
+      } catch (e) {
+        entry.name = entry.bytes = entry.parsed = null;
+        setTag(tag, "载入失败：" + e.message, "err");
+        log("载入失败：" + e.message);
+        updateBuild();
+      }
+    };
+    reader.onerror = () => {
+      setTag(tag, "读取失败", "err");
+      log("读取失败：" + file.name);
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  function loadExe(file) {
+    const tag = $("tagExe");
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const bytes = new Uint8Array(reader.result);
+        if (bytes.length !== 26306048 || bytes[0] !== 0x4D || bytes[1] !== 0x5A) {
+          throw new Error("不是 2.50 版 chusanApp.exe（大小 " + bytes.length + "）");
+        }
+        state.exe.bytes = bytes;
+        state.exe.name = file.name;
+        const n = LUT.detectExeN(bytes);
+        if (n === null) {
+          setTag(tag, "已载入 · 槽位状态未知（生成时逐站点校验）", "warn");
+        } else if (n === LUT.SLOTS) {
+          setTag(tag, "已载入 · 原版 41 槽", "ok");
+        } else {
+          setTag(tag, "已载入 · 当前已扩到 " + n + " 槽", "warn");
+        }
+        log("已载入 " + file.name + "（" + bytes.length + " 字节，" +
+            (n === null ? "槽位未知" : n + " 槽") + "）。");
+        renderPreview();
+        updateBuild();
+      } catch (e) {
+        state.exe.bytes = null;
+        setTag(tag, "载入失败：" + e.message, "err");
+        log("载入失败：" + e.message);
+        updateBuild();
+      }
+    };
+    reader.onerror = () => setTag(tag, "读取失败", "err");
+    reader.readAsArrayBuffer(file);
+  }
+
+  function updateBuild() {
+    buildEl.disabled = !(state.judge.parsed || state.play.parsed || state.exe.bytes);
+  }
+
+  function wireDrop(slot, dropId, inputId) {
+    const drop = $(dropId), input = $(inputId);
+    drop.addEventListener("click", () => input.click());
+    input.addEventListener("change", () => {
+      if (input.files && input.files[0]) loadFile(slot, input.files[0]);
+      input.value = "";
+    });
+    ["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => {
+      e.preventDefault(); e.stopPropagation(); drop.classList.add("over");
+    }));
+    ["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => {
+      e.preventDefault(); e.stopPropagation(); drop.classList.remove("over");
+    }));
+    drop.addEventListener("drop", (e) => {
+      const f = e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f) loadFile(slot, f);
+    });
+  }
+
+  function download(bytes, filename) {
+    const blob = new Blob([bytes], { type: "application/octet-stream" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 2000);
+  }
+
+  function build() {
+    const R = currentRange();
+    const mode = modeEl.value;
+    const out = [];
+    for (const slot of ["play", "judge"]) {
+      const entry = state[slot];
+      if (!entry.parsed) continue;
+      const bytes = mode === "append"
+        ? LUT.buildAppended(entry.parsed, R)
+        : LUT.buildAppendedSym(entry.parsed, R);
+      out.push({ name: NAMES[slot], bytes: bytes, slot: slot });
+    }
+
+    let exePatched = false;
+    if (state.exe.bytes) {
+      try {
+        out.push({ name: "chusanApp.exe", bytes: LUT.buildExe(state.exe.bytes, R, mode), slot: "exe" });
+        exePatched = true;
+      } catch (e) {
+        log("exe 补丁失败：" + e.message);
+        return;
+      }
+    }
+
+    if (!out.length) { log("还没有载入任何文件。"); return; }
+    out.forEach((o, i) => setTimeout(() => download(o.bytes, o.name), i * 600));
+
+    const detail = mode === "append"
+      ? "0.1 步长正向追加，+2.1…+" + R.toFixed(1) + "，行数 41→" + (LUT.SLOTS + LUT.appendedCount(R))
+      : "0.1 步长对称追加，-" + R.toFixed(1) + "…+" + R.toFixed(1) + "，行数 41→" + (LUT.SLOTS + LUT.appendedSymCount(R));
+    log("已生成 " + out.length + " 个文件（" + detail + (exePatched ? "，含 chusanApp.exe 槽位补丁" : "") + "）：\n  " +
+        out.map((o) => o.name + "（" + o.bytes.length + " 字节）").join("\n  ") +
+        "\n\n请先备份原文件，再用下载结果覆盖；重启游戏生效。" +
+        (exePatched
+          ? "\n\nexe 已扩到 " + (LUT.SLOTS + (mode === "appendSym" ? LUT.appendedSymCount(R) : LUT.appendedCount(R))) + " 个槽位，追加档位可直接在设置界面选到。"
+          : "\n\n提醒：未载入 chusanApp.exe，追加的档位超出原版 41 个槽位，设置界面选不到；需要外部把索引写到 41 以上。"));
+  }
+
+  rangeEl.addEventListener("input", () => syncRange("range"));
+  rangeEl.addEventListener("change", () => { rangeEl.value = String(currentRange()); syncRange("range"); });
+  sliderEl.addEventListener("input", () => { sliderEl.value = clampRange(sliderEl.value, modeEl.value); rangeEl.value = sliderEl.value; syncRange("slider"); });
+  modeEl.addEventListener("change", () => syncRange());
+  $("reset").addEventListener("click", () => {
+    modeEl.value = "append";
+    rangeEl.value = 2;
+    sliderEl.value = 2;
+    syncRange();
+    log("已恢复原版（上界 2.0，不追加任何档位）。此设置生成的表与原版逐字节一致；若同时生成 chusanApp.exe，槽位也会还原为 41。");
+  });
+  buildEl.addEventListener("click", build);
+
+  wireDrop("judge", "dropJudge", "fileJudge");
+  wireDrop("play", "dropPlay", "filePlay");
+
+  (function wireExe() {
+    const drop = $("dropExe"), input = $("fileExe");
+    drop.addEventListener("click", () => input.click());
+    input.addEventListener("change", () => {
+      if (input.files && input.files[0]) loadExe(input.files[0]);
+      input.value = "";
+    });
+    ["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => {
+      e.preventDefault(); e.stopPropagation(); drop.classList.add("over");
+    }));
+    ["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => {
+      e.preventDefault(); e.stopPropagation(); drop.classList.remove("over");
+    }));
+    drop.addEventListener("drop", (e) => {
+      const f = e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f) loadExe(f);
+    });
+  })();
+
+  $("pickFolder").addEventListener("click", () => $("folder").click());
+  $("folder").addEventListener("change", () => {
+    const files = Array.from($("folder").files || []);
+    let n = 0;
+    for (const f of files) {
+      const name = f.name.toLowerCase();
+      if (name === NAMES.judge.toLowerCase()) { loadFile("judge", f); n++; }
+      else if (name === NAMES.play.toLowerCase()) { loadFile("play", f); n++; }
+    }
+    if (!n) log("这个文件夹里没有找到两个 offset 表文件。");
+  });
+
+  syncRange();
+  updateBuild();
+})();
+</script>
+</body>
+</html>
